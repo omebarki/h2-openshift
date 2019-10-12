@@ -1,0 +1,179 @@
+---
+#oc import-image @project.artifactId@:@project.version@ --from=@docker.remote.registry@/@project.artifactId@:@project.version@ --confirm --insecure
+apiVersion: v1
+kind: Template
+labels:
+  app: h2-persistent
+  template: h2-persistent-template
+metadata:
+  annotations:
+    description: |-
+      H2 service, with persistent storage.
+      
+      NOTE: You must have persistent volumes available in your cluster to use this template.
+    iconClass: "fa fa-database"
+    openshift.io/display-name: H2 DB
+    tags: instant-app,h2
+  name: h2-persistent
+objects:
+
+  - apiVersion: v1
+    kind: Route
+    metadata:
+      annotations:
+        haproxy.router.openshift.io/timeout: 4m
+        template.openshift.io/expose-uri: http://{.spec.host}{.spec.path}
+      name: "${H2_WEB_SERVICE_NAME}"
+    spec:
+      tls:
+        insecureEdgeTerminationPolicy: Redirect
+        termination: edge
+      to:
+        kind: Service
+        name: "${H2_WEB_SERVICE_NAME}"
+
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: "${H2_SERVICE_NAME}"
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "${VOLUME_CAPACITY}"
+
+  - apiVersion: v1
+    kind: DeploymentConfig
+    metadata:
+      annotations:
+        template.alpha.openshift.io/wait-for-ready: 'true'
+      name: "${H2_SERVICE_NAME}"
+    spec:
+      replicas: 1
+      selector:
+        name: "${H2_SERVICE_NAME}"
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          labels:
+            name: "${H2_SERVICE_NAME}"
+        spec:
+          containers:
+            - capabilities: {}
+              env:
+                - name: TCP_PORT
+                  value: "${TCP_PORT}"
+                - name: WEB_PORT
+                  value: "${WEB_PORT}"
+              image: " "
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                failureThreshold: 2
+                httpGet:
+                  path: "/"
+                  port: ${{WEB_PORT}}
+                initialDelaySeconds: 420
+                periodSeconds: 360
+                timeoutSeconds: 240
+              name: h2
+              readinessProbe:
+                httpGet:
+                  path: "/"
+                  port: ${{WEB_PORT}}
+                initialDelaySeconds: 3
+                timeoutSeconds: 240
+              resources:
+                limits:
+                  memory: "${MEMORY_LIMIT}"
+              securityContext:
+                capabilities: {}
+                privileged: false
+              terminationMessagePath: "/dev/termination-log"
+              volumeMounts:
+                - mountPath: "/app/data/h2"
+                  name: "${H2_SERVICE_NAME}-data"
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          volumes:
+            - name: "${H2_SERVICE_NAME}-data"
+              persistentVolumeClaim:
+                claimName: "${H2_SERVICE_NAME}"
+      triggers:
+        - imageChangeParams:
+            automatic: true
+            containerNames:
+              - h2
+            from:
+              kind: ImageStreamTag
+              name: "${H2_IMAGE_STREAM_TAG}"
+            lastTriggeredImage: ''
+          type: ImageChange
+        - type: ConfigChange
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: "${H2_SERVICE_NAME}"
+    spec:
+      ports:
+        - name: h2tcp
+          nodePort: 0
+          port: ${{TCP_PORT}}
+          protocol: TCP
+          targetPort: ${{TCP_PORT}}
+      selector:
+        name: "${H2_SERVICE_NAME}"
+      sessionAffinity: None
+      type: ClusterIP
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      annotations:
+        service.openshift.io/infrastructure: 'true'
+      name: "${H2_WEB_SERVICE_NAME}"
+    spec:
+      ports:
+        - name: web
+          nodePort: 0
+          port: ${{WEB_PORT}}
+          protocol: TCP
+          targetPort: ${{WEB_PORT}}
+      selector:
+        name: "${H2_SERVICE_NAME}"
+      sessionAffinity: None
+      type: ClusterIP
+
+parameters:
+  - description: The name of the OpenShift Service exposed for the H2 container.
+    displayName: H2 Service Name
+    name: H2_SERVICE_NAME
+    value: h2-service
+  - description: The tcp port of the OpenShift Service exposed for the H2 container.
+    displayName: H2 tcp port
+    name: TCP_PORT
+    value: "9092"
+  - description: The web port of the OpenShift Service exposed for the H2 container.
+    displayName: H2 web port
+    name: WEB_PORT
+    value: "8082"
+  - description: The name of the OpenShift web Service exposed for the H2 container.
+    displayName: H2 web Service Name
+    name: H2_WEB_SERVICE_NAME
+    value: h2web-service
+  - description: Maximum amount of memory the container can use.
+    displayName: Memory Limit
+    name: MEMORY_LIMIT
+    value: 512Mi
+  - description: Volume space available for data, e.g. 512Mi, 2Gi.
+    displayName: Volume Capacity
+    name: VOLUME_CAPACITY
+    required: true
+    value: 0.001Gi
+  - description: Name of the ImageStreamTag to be used for the H2 image.
+    displayName: H2 ImageStreamTag
+    name: H2_IMAGE_STREAM_TAG
+    value: h2-openshift:0.0.1-SNAPSHOT
+

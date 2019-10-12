@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>omar.mebarki</groupId>
+    <artifactId>h2-openshift</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <properties>
+        <java.version>1.8</java.version>
+        <h2.version>1.4.199</h2.version>
+        <docker.remote.registry>tadartiw</docker.remote.registry>
+        <docker.image.from>adoptopenjdk/openjdk8:latest</docker.image.from>
+        <docker.image.name>${docker.remote.registry}/${project.artifactId}:${project.version}</docker.image.name>
+    </properties>
+    <dependencies>
+        <!-- https://mvnrepository.com/artifact/com.h2database/h2 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>${h2.version}</version>
+        </dependency>
+    </dependencies>
+
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-openshift</id>
+                        <!-- insert here the phase you need -->
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/openshift</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>src/main/openshift</directory>
+                                    <filtering>true</filtering>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>copy-docker</id>
+                        <!-- insert here the phase you need -->
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/docker</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>src/main/docker/shell</directory>
+                                    <filtering>true</filtering>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>io.fabric8</groupId>
+                <artifactId>docker-maven-plugin</artifactId>
+                <configuration>
+                    <images>
+                        <image>
+                            <name>${docker.image.name}</name>
+                            <build>
+                                <from>${docker.image.from}</from>
+                                <entryPoint>
+                                    <exec>
+                                        <arg>/app/bin/h2.sh</arg>
+                                    </exec>
+                                </entryPoint>
+                                <assembly>
+                                    <mode>dir</mode>
+                                    <targetDir>/app</targetDir>
+                                    <descriptor>assembly.xml</descriptor>
+                                </assembly>
+                            </build>
+                            <run>
+                                <ports>
+                                    <port>8080</port>
+                                </ports>
+                            </run>
+                        </image>
+                    </images>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>generate image</id>
+                        <phase>install</phase>
+                        <goals>
+                            <goal>build</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>push image</id>
+                        <phase>install</phase>
+                        <goals>
+                            <goal>push</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
